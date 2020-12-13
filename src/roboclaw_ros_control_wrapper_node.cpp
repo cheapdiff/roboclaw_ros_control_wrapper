@@ -34,6 +34,8 @@ private:
 
     double gear_ratio_;
     int enc_qppr_;
+    double rad_per_pulse_;
+    double last_pos_[2];
     ros::Time last_;
 
     ros::NodeHandle nh_;
@@ -41,7 +43,7 @@ private:
     ros::Subscriber enc_sub_;
 };
 
-RoboClawDriver::RoboClawDriver() : cmd_{}, pos_{}, vel_{}, eff_{}
+RoboClawDriver::RoboClawDriver() : cmd_{}, pos_{}, vel_{}, eff_{}, last_pos_{}
 {
     hardware_interface::JointStateHandle right_state_handle("right_wheel_joint", &pos_[0], &vel_[0], &eff_[0]);
     joint_state_interface_.registerHandle(right_state_handle);
@@ -64,6 +66,9 @@ RoboClawDriver::RoboClawDriver() : cmd_{}, pos_{}, vel_{}, eff_{}
 
     nh_.param<double>("gear_ratio", gear_ratio_, 34.02);
     nh_.param<int>("encoder_qppr", enc_qppr_, 44);
+
+    rad_per_pulse_ = (2 * M_PI) / (gear_ratio_ * enc_qppr_);
+
     last_ = ros::Time::now();
 }
 
@@ -81,12 +86,14 @@ void RoboClawDriver::read()
 
 void RoboClawDriver::odom_cb(const roboclaw::RoboclawEncoderSteps &msg)
 {
-    ros::Time now = getTime();
-    vel_[0] = msg.mot1_enc_steps * 2 * (M_PI / (gear_ratio_ * enc_qppr_));
-    vel_[1] = msg.mot2_enc_steps * 2 * (M_PI / (gear_ratio_ * enc_qppr_));
+    pos_[0] = rad_per_pulse_ * msg.mot1_enc_steps;
+    pos_[1] = rad_per_pulse_ * msg.mot2_enc_steps;
 
-    pos_[0] += vel_[0] * (now - last_).toSec();
-    pos_[1] += vel_[1] * (now - last_).toSec();
+    ros::Time now = getTime();
+    vel_[0] = (last_pos_[0] - pos_[0]) * (now - last_).toSec();
+    vel_[1] = (last_pos_[1] - pos_[1]) * (now - last_).toSec();
+    last_pos_[0] = pos_[0];
+    last_pos_[1] = pos_[1];
     last_ = now;
 }
 
